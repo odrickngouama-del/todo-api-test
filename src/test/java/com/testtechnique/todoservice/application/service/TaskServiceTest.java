@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -132,4 +133,98 @@ class TaskServiceTest {
 
         assertThat(updated.completed()).isFalse();
     }
+
+    
+    @Test
+    void should_reject_add_when_max_active_tasks_reached() {
+
+        var tasks = IntStream.range(0, 10)
+                .mapToObj(i -> Task.newTask("Task " + i, "d"))
+                .toList();
+
+        when(repository.findAll()).thenReturn(tasks);
+
+        assertThatThrownBy(() -> service.add("New Task", "d"))
+                .isInstanceOf(DomainException.class)
+                .extracting(e -> ((DomainException) e).code())
+                .isEqualTo(ErrorCodes.MAX_ACTIVE_TASKS);
+    }
+
+
+    @Test
+    void should_reject_add_when_active_label_already_exists() {
+
+        var tasks = List.of(
+                Task.newTask("Courses", "d")
+        );
+
+        when(repository.findAll()).thenReturn(tasks);
+
+        assertThatThrownBy(() -> service.add("courses", "d"))
+                .isInstanceOf(DomainException.class)
+                .extracting(e -> ((DomainException) e).code())
+                .isEqualTo(ErrorCodes.DUPLICATE_ACTIVE_LABEL);
+    }
+
+
+    @Test
+    void should_allow_add_when_same_label_but_task_completed() {
+
+        var completed = Task.newTask("Courses", "d").withCompleted(true);
+
+        when(repository.findAll()).thenReturn(List.of(completed));
+        when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var task = service.add("Courses", "d");
+
+        assertThat(task.label()).isEqualTo("Courses");
+    }
+
+    @Test
+    void should_reject_reactivation_when_max_active_tasks_reached() {
+
+        var completed = Task.newTask("X", "d").withCompleted(true);
+
+        var actives = IntStream.range(0, 10)
+                .mapToObj(i -> Task.newTask("Task " + i, "d"))
+                .toList();
+
+        when(repository.findById("1")).thenReturn(Optional.of(completed));
+        when(repository.findAll()).thenReturn(actives);
+
+        assertThatThrownBy(() -> service.changeStatus("1", false))
+                .isInstanceOf(DomainException.class)
+                .extracting(e -> ((DomainException) e).code())
+                .isEqualTo(ErrorCodes.MAX_ACTIVE_TASKS);
+    }
+
+    @Test
+    void should_reject_reactivation_when_active_label_exists() {
+
+        var completed = Task.newTask("Courses", "d").withCompleted(true);
+        var active = Task.newTask("Courses", "d");
+
+        when(repository.findById("1")).thenReturn(Optional.of(completed));
+        when(repository.findAll()).thenReturn(List.of(active));
+
+        assertThatThrownBy(() -> service.changeStatus("1", false))
+                .isInstanceOf(DomainException.class)
+                .extracting(e -> ((DomainException) e).code())
+                .isEqualTo(ErrorCodes.DUPLICATE_ACTIVE_LABEL);
+    }
+
+    @Test
+    void should_reactivate_task_when_rules_are_ok() {
+
+        var completed = Task.newTask("Courses", "d").withCompleted(true);
+
+        when(repository.findById("1")).thenReturn(Optional.of(completed));
+        when(repository.findAll()).thenReturn(List.of());
+        when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var task = service.changeStatus("1", false);
+
+        assertThat(task.completed()).isFalse();
+    }
+
 }
