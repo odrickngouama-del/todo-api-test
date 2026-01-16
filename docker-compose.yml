@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  todo-service:
+    build: .
+    container_name: todo-service
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
